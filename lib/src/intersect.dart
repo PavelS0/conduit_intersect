@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'package:aqueduct/aqueduct.dart';
+import 'package:conduit/conduit.dart';
 
 class Intersect<T extends ManagedObject> {
-  
   Intersect._(this.removed, this.added, this.updated);
 
   factory Intersect.from(Iterable<T> current, Iterable<T> source) {
@@ -24,7 +23,7 @@ class Intersect<T extends ManagedObject> {
       updated = [];
     } else {
       final cSet = current.toSet();
-      final sSet = source.toSet(); 
+      final sSet = source.toSet();
       updated = cSet.intersection(sSet);
       added = cSet.difference(sSet);
       removed = sSet.difference(cSet);
@@ -36,60 +35,63 @@ class Intersect<T extends ManagedObject> {
   final Iterable<T> added;
   final Iterable<T> updated;
 
-  Future<void> updateDb(ManagedContext context, dynamic field(T x), {FutureOr<bool> onAdd(T x), FutureOr<void> onAfterAdd(T inserted, T x), FutureOr<bool> onUpdate(T x), FutureOr<void> onAfterUpdate(T updated, T x)}) async {
-   await remove(context, field);
-   await add(context, onAdd: onAdd, onAfterAdd: onAfterAdd);
-   await update(context, field, onUpdate: onUpdate, onAfterUpdate: onAfterUpdate);
+  Future<void> updateDb(ManagedContext context, dynamic field(T x),
+      {FutureOr<bool> onAdd(Query<T> x)?,
+      FutureOr<void> onAfterAdd(T inserted, T x)?,
+      FutureOr<bool> onUpdate(Query<T> x)?,
+      FutureOr<void> onAfterUpdate(T? updated, T x)?}) async {
+    await remove(context, field);
+    await add(context, onAdd: onAdd, onAfterAdd: onAfterAdd);
+    await update(context, field,
+        onUpdate: onUpdate, onAfterUpdate: onAfterUpdate);
   }
 
-  Future<void> remove(ManagedContext context, dynamic field(T x))  async {
-     if (removed.isNotEmpty) {
-      final rq = Query<T>(context)
-        ..where(field)
-        .oneOf(removed.map(field));
+  Future<void> remove(ManagedContext context, dynamic field(T x)) async {
+    if (removed.isNotEmpty) {
+      final rq = Query<T>(context)..where(field).oneOf(removed.map(field));
       await rq.delete();
     }
   }
 
-  Future<void> add(ManagedContext context, {FutureOr<bool> onAdd(T x), FutureOr<void> onAfterAdd(T inserted, T x)})  async {
-    
+  Future<void> add(ManagedContext context,
+      {FutureOr<bool> onAdd(Query<T> x)?,
+      FutureOr<void> onAfterAdd(T inserted, T x)?}) async {
     if (added.isNotEmpty) {
       for (var a in added) {
-        T inserted;
+        T? inserted;
+        final query = Query<T>(context)..values = a;
         if (onAdd != null) {
-          if (await onAdd(a)) {
-            inserted = await context.insertObject(a);
+          if (await onAdd(query)) {
+            inserted = await query.insert();
           }
         } else {
-          inserted = await context.insertObject(a);
+          inserted = await query.insert();
         }
-        if (onAfterAdd != null) {
-          onAfterAdd(inserted, a);
+        if (onAfterAdd != null && inserted != null) {
+          await onAfterAdd(inserted, a);
         }
       }
     }
   }
-  
-  Future<T> _upd(ManagedContext context, T u, dynamic field(T x)) async {
-     final uq = Query<T>(context)
-      ..values = u
-      ..where(field).equalTo(field(u));
-    return await uq.updateOne();
-  }
-  
-  Future<void> update(ManagedContext context, dynamic field(T x), {FutureOr<bool> onUpdate(T x), FutureOr<void> onAfterUpdate(T updated, T x)})  async {
+
+  Future<void> update(ManagedContext context, dynamic field(T x),
+      {FutureOr<bool> onUpdate(Query<T> x)?,
+      FutureOr<void> onAfterUpdate(T? updated, T x)?}) async {
     if (updated.isNotEmpty) {
       for (var u in updated) {
-        T updated;
+        T? updated;
+        final query = Query<T>(context)
+          ..values = u
+          ..where(field).equalTo(field(u));
         if (onUpdate != null) {
-          if(await onUpdate(u)) {
-            updated = await _upd(context, u, field);
+          if (await onUpdate(query)) {
+            updated = await query.updateOne();
           }
         } else {
-          updated = await _upd(context, u, field);
+          updated = await query.updateOne();
         }
         if (onAfterUpdate != null) {
-          onAfterUpdate(updated, u);
+          await onAfterUpdate(updated, u);
         }
       }
     }

@@ -1,3 +1,3 @@
-library aqueduct_intersect;
+library conduit_intersect;
 
 export 'src/intersect.dart';
